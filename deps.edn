@@ -1,3 +1,8 @@
 {:deps
  {org.apache.kafka/kafka-clients {:mvn/version "1.0.0"}
-  org.clojure/tools.logging      {:mvn/version "0.4.0"}}}
+  org.clojure/tools.logging      {:mvn/version "0.4.0"}}
+
+ :aliases
+ {:test {:extra-paths ["test"]
+         :extra-deps  {org.apache.kafka/kafka_2.11     {:mvn/version "1.0.0"}
+                       org.apache.curator/curator-test {:mvn/version "2.8.0"}}}}}
