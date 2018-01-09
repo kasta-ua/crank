@@ -1,7 +1,8 @@
 (ns crank.kafka-test
   (:require [clojure.test :as test :refer [deftest is]]
             [crank.input :as input]
-            [crank.kafka :as k])
+            [crank.kafka :as k]
+            [clojure.tools.logging :as log])
   (:import [org.apache.curator.test TestingServer]
            [kafka.server KafkaConfig KafkaServerStartable]
            [org.apache.kafka.clients.producer KafkaProducer ProducerRecord]
@@ -17,17 +18,17 @@
                            :topic              "test"
                            :group              "test"
                            "auto.offset.reset" "earliest"})
-        _        (println "acquiring input...")
+        _        (log/debug "acquiring input...")
         input    (input/acquire input)
-        _        (println (.listTopics (:consumer input)))
-        _        (println "reading messages...")
+        _        (log/debug (.listTopics (:consumer input)))
+        _        (log/debug "reading messages...")
         messages (input/receive input 0)]
     (println messages)))
 
 
 (defn start-zookeeper [f]
   (let [zk (TestingServer. 2181)]
-    (println "ZK started")
+    (log/debug "ZK started")
     (f)
     (.close zk)))
 
@@ -38,7 +39,7 @@
                               "auto.create.topics.enable" true})
         kafka  (KafkaServerStartable. config)]
     (.startup kafka)
-    (println "kafka started")
+    (log/debug "kafka started")
     (f)
     (.shutdown kafka)))
 
@@ -51,7 +52,7 @@
     (.send producer (ProducerRecord. "test" "qweqwe"))
     (.send producer (ProducerRecord. "test" "asdasd"))
     (.flush producer)
-    (println "messages sent")
+    (log/debug "messages sent")
     (f)
     (.close producer)))
 
