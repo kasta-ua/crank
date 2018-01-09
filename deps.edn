@@ -4,9 +4,15 @@
 
  :aliases
  {:test {:extra-paths ["test"]
-         :extra-deps  {org.apache.kafka/kafka_2.11     {:mvn/version "1.0.0"
-                                                        :exclusions  [org.slf4j/slf4j-log4j12
-                                                                      log4j/log4j]}
-                       org.apache.curator/curator-test {:mvn/version "2.8.0"}
-                       ch.qos.logback/logback-classic  {:mvn/version "1.2.3"}
-                       org.slf4j/log4j-over-slf4j      {:mvn/version "1.7.25"}}}}}
+         :extra-deps
+         {me.raynes/fs                    {:mvn/version "1.4.6"}
+          org.apache.kafka/kafka_2.11     {:mvn/version "1.0.0"
+                                           :exclusions  [org.slf4j/slf4j-log4j12
+                                                         log4j/log4j]}
+          org.apache.curator/curator-test {:mvn/version "2.8.0"}
+          ch.qos.logback/logback-classic  {:mvn/version "1.2.3"}
+          org.slf4j/log4j-over-slf4j      {:mvn/version "1.7.25"}}}
+  :repl {:extra-deps
+         {cider/cider-nrepl       {:mvn/version "0.15.1"}
+          org.clojure/tools.nrepl {:mvn/version "0.2.12"}
+          refactor-nrepl          {:mvn/version "2.3.1"}}}}}

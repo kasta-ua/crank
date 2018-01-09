@@ -9,11 +9,16 @@
     </filter>
   </appender>
 
-  <root level="INFO">
+  <root level="DEBUG">
     <appender-ref ref="STDOUT" />
   </root>
 
   <logger name="user" level="ALL" />
   <logger name="mk" level="ALL" />
-  <logger name="org.apache.kafka" level="INFO" />
+  <logger name="org.apache.kafka" level="WARN" />
+  <logger name="org.apache.kafka.clients" level="ERROR" />
+  <logger name="org.apache.zookeeper" level="WARN" />
+  <logger name="org.I0Itec.zkclient" level="WARN" />
+  <logger name="kafka" level="WARN" />
+  <logger name="kafka.server.BrokerMetadataCheckpoint" level="ERROR" />
 </configuration>

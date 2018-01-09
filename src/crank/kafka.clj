@@ -34,7 +34,7 @@
 
   (receive [this timeout]
     (let [crs (.poll (:consumer this) timeout)]
-      (log/debugf "received %s records" (count crs))
+      (log/debugf "received %s records" (.count crs))
       (map cr->data crs)))
 
   (ack [this message]
