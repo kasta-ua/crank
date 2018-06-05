@@ -3,8 +3,9 @@
             [clojure.tools.logging :as log]
             [clojure.java.io :as io]
             [me.raynes.fs :as fs]
+
             [crank.input :as input]
-            [crank.kafka :as k])
+            [crank.input.kafka :as k])
   (:import [org.apache.curator.test TestingServer]
            [kafka.server KafkaConfig KafkaServerStartable]
            [org.apache.kafka.common TopicPartition]
@@ -25,7 +26,7 @@
   (.send @*producer (ProducerRecord. topic message)))
 
 
-(deftest can-connect
+(deftest can-read-messages
   (let [input    (k/input {:servers kafka-address
                            :topic   "test"
                            :group   "test"})
@@ -40,7 +41,7 @@
     (is (= 1 (count messages)))))
 
 
-(defn clean-temp [f]
+(defn cleanup-temp [f]
   (fs/delete-dir "/tmp/kafka-logs")
   (fs/delete-dir "/tmp/zk")
   (f))
@@ -66,4 +67,4 @@
     (.shutdown kafka)))
 
 
-(test/use-fixtures :once clean-temp start-zookeeper start-kafka)
+(test/use-fixtures :once cleanup-temp start-zookeeper start-kafka)

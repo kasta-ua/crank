@@ -1,46 +1,65 @@
 (ns crank.kafka
-  (:require [clojure.tools.logging :as log]
-
-            [crank.input :as input])
-  (:import org.apache.kafka.clients.consumer.KafkaConsumer
-           org.apache.kafka.common.serialization.StringDeserializer))
-
-
-(defn cr->data
-  "Yield a clojure representation of a consumer record"
-  [cr]
-  {:key       (.key cr)
-   :offset    (.offset cr)
-   :partition (.partition cr)
-   :topic     (.topic cr)
-   :value     (.value cr)})
+  (:require [clojure.string :as str])
+  (:import [org.apache.kafka.common.serialization
+            ByteArraySerializer ByteArrayDeserializer]
+           [org.apache.kafka.common TopicPartition]
+           [org.apache.kafka.clients.consumer KafkaConsumer OffsetAndMetadata]
+           [org.apache.kafka.clients.producer
+            KafkaProducer ProducerRecord]
+           [java.net InetAddress]))
 
 
-(defrecord KafkaInput [servers topic group kafka-opts
-                       ;; inner
-                       consumer]
-  input/Input
-  (acquire [this]
-    ;; FIXME: сначала lock этого топика в ZK
-    (when true
-      (let [c (KafkaConsumer.
-                (assoc kafka-opts
-                  "bootstrap.servers" servers
-                  "group.id"          group)
-                (StringDeserializer.)
-                (StringDeserializer.))]
-        (.subscribe c [topic])
-        (assoc this :consumer c))))
-
-  (receive [this timeout]
-    (let [crs (.poll (:consumer this) timeout)]
-      (log/debugf "received %s records" (.count crs))
-      (map cr->data crs)))
-
-  (ack [this message]
-    (.commitSync (:consumer this))))
+(defn hostname []
+  (-> (InetAddress/getLocalHost) .getHostName (str/split #"\.") first))
 
 
-(defn input [{:keys [servers topic group] :as opts}]
-  (map->KafkaInput {:servers servers :topic topic :group group
-                    :opts (dissoc opts :servers :topic :group)}))
+(defn make-consumer-config [config]
+  {"bootstrap.servers"  (:uri config)
+   "group.id"           (:group config)
+   "max.poll.records"   (int (:batch-size config 10000))
+   "auto.offset.reset"  "latest"
+   "enable.auto.commit" false
+   "key.deserializer"   ByteArrayDeserializer
+   "value.deserializer" ByteArrayDeserializer})
+
+
+(defn make-consumer [config]
+  (KafkaConsumer. (make-consumer-config config)))
+
+
+;;; Utility helpers
+
+
+(defn set-offset! [config topic offset]
+  (let [consumer (make-consumer config)
+        tp       (TopicPartition. topic 0)
+        om       (OffsetAndMetadata. offset)]
+    (try
+      (.assign consumer [tp])
+      (.commitSync consumer {tp om})
+      (.position consumer tp)
+      (finally
+        (.close consumer)))))
+
+
+(defn set-begin! [config topic]
+  (let [consumer (make-consumer config)
+        tp       (TopicPartition. topic 0)
+        bof      (.beginningOffsets consumer [tp])
+        om       (OffsetAndMetadata. (get bof tp))]
+    (try
+      (.assign consumer [tp])
+      (.commitSync consumer {tp om})
+      (.position consumer tp)
+      (finally
+        (.close consumer)))))
+
+
+(defn get-offset [config topic]
+  (let [consumer (make-consumer config)
+        tp       (TopicPartition. topic 0)]
+    (try
+      (.assign consumer [tp])
+      (.position consumer tp)
+      (finally
+        (.close consumer)))))
