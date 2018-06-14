@@ -1,8 +1,7 @@
 (ns crank.test
   (:require [clojure.test :as test]
             [crank
-             kafka-test
-             worker-test]))
+             core-test]))
 
 
 (defn -main [& args]

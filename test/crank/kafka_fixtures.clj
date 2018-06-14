@@ -1,11 +1,8 @@
-(ns crank.kafka-test
+(ns crank.kafka-fixtures
   (:require [clojure.test :as test :refer [deftest is]]
             [clojure.tools.logging :as log]
             [clojure.java.io :as io]
-            [me.raynes.fs :as fs]
-
-            [crank.input :as input]
-            [crank.input.kafka :as k])
+            [me.raynes.fs :as fs])
   (:import [org.apache.curator.test TestingServer]
            [kafka.server KafkaConfig KafkaServerStartable]
            [org.apache.kafka.common TopicPartition]
@@ -18,7 +15,7 @@
 
 
 (def *producer (atom nil))
-(defn send-message [topic message]
+(defn send! [topic message]
   (when (nil? @*producer)
     (reset! *producer (KafkaProducer. {"bootstrap.servers" kafka-address}
                         (StringSerializer.)
@@ -26,7 +23,7 @@
   (.send @*producer (ProducerRecord. topic message)))
 
 
-(deftest can-read-messages
+#_(deftest can-read-messages
   (let [input    (k/input {:servers kafka-address
                            :topic   "test"
                            :group   "test"})
@@ -48,23 +45,29 @@
 
 
 (defn start-zookeeper [f]
+  (log/info "ZK starting up")
   (let [zk (TestingServer. 2181 (io/file "/tmp/zk"))]
     (log/info "ZK started")
     (f)
-    (.close zk)))
+    (.close zk)
+    (log/info "ZK stopped")))
 
 
-(defn start-kafka [f]
+(defn -start-kafka []
   (let [config (KafkaConfig. {"zookeeper.connect"                zk-address
                               "listeners"                        "PLAINTEXT://127.0.0.1:9092"
                               "auto.create.topics.enable"        true
                               "offsets.topic.replication.factor" (short 1)
-                              "offsets.topic.num.partitions"     (int 1)})
-        kafka  (KafkaServerStartable. config)]
-    (.startup kafka)
+                              "offsets.topic.num.partitions"     (int 1)})]
+    (doto (KafkaServerStartable. config)
+      (.startup))))
+
+
+(defn start-kafka [f]
+  (log/info "kafka starting up")
+  (let [kafka (-start-kafka)]
     (log/info "kafka started")
     (f)
-    (.shutdown kafka)))
+    (.shutdown kafka)
+    (log/info "kafka stopped")))
 
-
-(test/use-fixtures :once cleanup-temp start-zookeeper start-kafka)

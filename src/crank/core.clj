@@ -1,6 +1,5 @@
 (ns crank.core
   (:require [clojure.tools.logging :as log]
-
             [crank.job :as job]))
 
 
@@ -9,21 +8,36 @@
   (stop [this] [this job-name]))
 
 
+(defn update-vals [m f]
+  (into {} (for [[k v] m]
+             [k (f k v)])))
+
+
+(defn cons-limit [coll limit item]
+  (->> (cons item coll)
+       (take limit)
+       doall))
+
+
+(defn check-job [job-name {:keys [consumer stop! report config] :as job}]
+  (let [diff (- (System/currentTimeMillis)
+                (:time (first report)))]
+    (if (> diff (:timeout config 10000))
+      (do
+        (log/infof "job %s seems to be dead since %s ms ago: %s"
+          job-name diff (pr-str report))
+        (stop!)
+        (job/start-job config consumer))
+      job)))
+
+
 (defn run-master [running]
   (try
     (loop []
-
-      (doseq [[job-name {:keys [report config]}] @running
-
-              :let  [diff (- (System/currentTimeMillis)
-                             (:time report ))]
-              :when (> diff (:timeout config 5000))]
-        (do
-          (log/infof "job %s seems to be dead" job-name)
-          (swap! running assoc job-name (job/start-job config))))
-
+      (swap! running update-vals check-job)
       (Thread/sleep 1000)
       (recur))
+
     (catch InterruptedException e
       (log/debug "monitor master exiting")
       :pass)))
@@ -42,7 +56,8 @@
                        (.start))))
 
     (let [send-report (fn [r]
-                        (swap! *running assoc-in [job-name :report] r)
+                        (log/debugf "new report for %s: %s" job-name r)
+                        (swap! *running update-in [job-name :report] cons-limit 10 r)
                         (when reporting-cb
                           (reporting-cb r)))
           job         (job/start-job (assoc config
@@ -57,16 +72,18 @@
       (.interrupt @master)))
 
   (stop [this job-name]
-    (let [{:keys [stop!]} (get @*running job-name)]
-      (when stop!
-        (stop!))
-      (swap! *running dissoc job-name))))
+    (swap! *running
+      (fn [jobs]
+        (let [{:keys [stop!]} (get jobs job-name)]
+          (when stop!
+            (log/infof "trying to stop job %s" job-name)
+            (stop!)))
+        (dissoc jobs job-name)))))
 
 
 (defn init
   ([] (init {}))
   ([{:keys [report]}]
-   (map->Monitor
-     {:reporting-cb report
-      :*running     (atom {})
-      :master       (atom nil)})))
+   (map->Monitor {:reporting-cb report
+                  :*running     (atom {})
+                  :master       (atom nil)})))

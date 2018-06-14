@@ -1,8 +1,8 @@
 (ns crank.job
   (:require [clojure.tools.logging :as log]
-            [cheshire.core :as json]
 
-            [crank.kafka :as kafka]))
+            [crank.kafka :as kafka])
+  (:import [org.apache.kafka.common.errors WakeupException]))
 
 
 (defn record->message [record]
@@ -11,58 +11,76 @@
    :offset    (.offset record)
    :timestamp (.timestamp record)
    :key       (.key record)
-   :value     (json/parse-string (slurp (.value record)) true)})
+   :value     (.value record)})
 
 
-(defn run-job [stop {:keys [kafka topic job-name func send-report]}]
-  (let [consumer (kafka/make-consumer kafka)]
-    (try
-      (.subscribe consumer [topic])
-      (loop [records nil]
-
+(defn run-loop [consumer stop {:keys [job-name func send-report]}]
+  (send-report {:time     (System/currentTimeMillis)
+                :job-name job-name
+                :type     :start})
+  (try
+    (loop [messages nil]
+      (when-not (nil? messages)
         (send-report {:time     (System/currentTimeMillis)
                       :job-name job-name
-                      :topic    topic
                       :type     :poll
-                      ;; ConsumerRecords, `count` doesn't work
-                      :count    (if records (.count records) 0)})
+                      :count    (count messages)}))
 
-        (doseq [record records
-                :let   [message (record->message record)]]
-          (when @stop
-            (throw (ex-info "stop iteration" {:stop true})))
-          (func message)
-          (send-report {:time      (System/currentTimeMillis)
+      (doseq [message messages]
+        (when @stop
+          (throw (ex-info "stop iteration" {:stop true})))
+
+        (func message)
+
+        (send-report {:time      (System/currentTimeMillis)
+                      :job-name  job-name
+                      :type      :message
+                      :topic     (:topic message)
+                      :offset    (:offset message)
+                      :partition (:partition message)}))
+
+      (when (seq messages)
+        (.commitSync consumer))
+
+      (if @stop
+        (throw (ex-info "stop job" {:stop true}))
+        (do
+          (recur (->> (.poll consumer 100)
+                      (mapv record->message))))))
+
+    (catch Exception e
+      (if (or (:stop (ex-data e))
+              (and @stop
+                   (instance? WakeupException e)))
+        (do
+          (send-report {:time     (System/currentTimeMillis)
+                        :job-name job-name
+                        :type     :stop})
+          (log/infof "Stopping job %s" job-name))
+        (do
+          (log/errorf e "Job %s died" job-name)
+          #_(send-report {:time      (System/currentTimeMillis)
                         :job-name  job-name
-                        :topic     topic
-                        :type      :message
-                        :offset    (:offset message)
-                        :partition (:partition message)}))
-
-        (.commitSync consumer)
-
-        (if @stop
-          (throw (ex-info "stop job" {:stop true}))
-          (recur (.poll consumer 100))))
-
-      (catch Exception e
-        (if (:stop (ex-data e))
-          (log/infof "Stopping job %s" job-name)
-          (throw e)))
-      (finally
-        (.close consumer)))))
+                        :type      :exception
+                        :exception e})
+          (throw e))))))
 
 
-(defn start-job [{:keys [job-name topic] :as config}]
-  (log/infof "Starting job %s" job-name)
+(defn start-job
+  ([{:keys [kafka] :as config}]
+   (start-job config
+     (kafka/make-consumer kafka)))
 
-  (let [stop   (atom false)
-        worker (doto (Thread. #(run-job stop config))
-                 (.start))]
-    {:config config
-     :worker worker
-     :report {:time     (System/currentTimeMillis)
-              :job-name job-name
-              :topic    topic
-              :type     :start}
-     :stop!  #(reset! stop true)}))
+  ([{:keys [job-name topics] :as config} consumer]
+   (log/infof "Starting job %s" job-name)
+   (.subscribe consumer topics)
+
+   (let [stop   (atom false)
+         worker (doto (Thread. #(run-loop consumer stop config))
+                  (.start))]
+     {:config   config
+      :worker   worker
+      :consumer consumer
+      :report   []
+      :stop!    #(do (reset! stop true)
+                     (.wakeup consumer))})))
