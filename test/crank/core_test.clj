@@ -3,9 +3,7 @@
 
             [crank.core :as crank]
             [crank.kafka :as kafka]
-            [crank.kafka-fixtures :as ck])
-
-  (:import [org.apache.kafka.clients.admin AdminClient NewTopic]))
+            [crank.kafka-fixtures :as ck]))
 
 
 (def counter (atom 0))
@@ -58,7 +56,7 @@
 
       @(ck/send! topic "just a value")
       (Thread/sleep 100)
-      (crank/stop mon)
+      (crank/stop mon "simple2")
 
       (is (= 1 (count @messages)))
       (is (= "just a value" (some-> @messages first :value slurp)))))

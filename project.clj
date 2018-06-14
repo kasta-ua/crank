@@ -11,10 +11,10 @@
 (def dependencies
   (deps->vec (:deps +deps+)))
 
-(defproject ua.kasta/crank "1.0.0"
+(defproject ua.kasta/crank "1.0.1"
   :dependencies ~dependencies
   :description "Building block for job processing"
-  :license {:name "Eclipse Public License - v 1.0"
+  :license {:name "Eclipse Public License - v1.0"
             :url "http://www.eclipse.org/legal/epl-v10.html"
             :distribution :repo
             :comments "same as Clojure"})

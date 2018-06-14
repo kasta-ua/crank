@@ -9,14 +9,17 @@
 
 
 (defn update-vals [m f]
-  (into {} (for [[k v] m]
-             [k (f k v)])))
-
+  (into {} (map (fn [[k v]] [k (f k v)]) m)))
 
 (defn cons-limit [coll limit item]
   (->> (cons item coll)
        (take limit)
        doall))
+
+
+(defn add-report [job report]
+  (when job
+    (update job :report cons-limit 10 report)))
 
 
 (defn check-job [job-name {:keys [stop! report config] :as job}]
@@ -54,11 +57,12 @@
               (not (.isAlive @master)))
       (reset! master (doto (Thread. #(run-master *running))
                        (.setName (str uname "-master"))
+                       (.setDaemon true)
                        (.start))))
 
     (let [send-report (fn [r]
                         (log/debugf "new report for %s: %s" job-name r)
-                        (swap! *running update-in [job-name :report] cons-limit 10 r)
+                        (swap! *running update job-name add-report r)
                         (when reporting-cb
                           (reporting-cb r)))
           job         (job/start-job (assoc config

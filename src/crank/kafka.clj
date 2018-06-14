@@ -20,8 +20,7 @@
    "auto.offset.reset"  "latest"
    "enable.auto.commit" false
    "key.deserializer"   ByteArrayDeserializer
-   "value.deserializer" ByteArrayDeserializer
-   "request.timeout.ms" (int 10001)})
+   "value.deserializer" ByteArrayDeserializer})
 
 
 (defn make-consumer [config]

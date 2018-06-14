@@ -15,21 +15,17 @@
 
 
 (defn run-loop [consumer stop {:keys [job-name func send-report]}]
-  (let [tps (.assignment consumer)]
-    (send-report {:time     (System/currentTimeMillis)
-                  :job-name job-name
-                  :type     :start
-                  :offset   (for [tp tps] (.position consumer tp))}))
+  (send-report {:time     (System/currentTimeMillis)
+                :job-name job-name
+                :type     :start})
 
   (try
     (loop [messages nil]
       (when-not (nil? messages) ; which is always except for first time
-        (let [tps (.assignment consumer)]
-          (send-report {:time     (System/currentTimeMillis)
-                        :job-name job-name
-                        :type     :poll
-                        :count    (count messages)
-                        :offset   (for [tp tps] (.position consumer tp))})))
+        (send-report {:time     (System/currentTimeMillis)
+                      :job-name job-name
+                      :type     :poll
+                      :count    (count messages)}))
 
       (doseq [message messages]
         (when @stop
@@ -64,10 +60,10 @@
           (log/infof "stopping job %s" job-name))
         (do
           (log/errorf e "job %s died" job-name)
-          #_(send-report {:time      (System/currentTimeMillis)
-                          :job-name  job-name
-                          :type      :exception
-                          :exception e})
+          (send-report {:time      (System/currentTimeMillis)
+                        :job-name  job-name
+                        :type      :exception
+                        :exception e})
           (throw e))))
 
     (finally
