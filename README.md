@@ -18,12 +18,12 @@ simplicity and understandability.
 (def monitor (crank/init {:report prn})) ; :report is optional
 
 (crank/start monitor "mk order"
-  {:topic "mk_order"
-   :func  prn
+  {:topic   "mk_order"
+   :func    prn
    :timeout 5000                ; optional
-   :kafka {:uri   "kafka1:9192"
-           :group "crank"
-           :batch-size 10000}}) ; optional
+   :kafka   {:uri   "kafka1:9192"
+             :group "crank"
+             :batch-size 10000}}) ; optional
 ```
 
 ## Description
