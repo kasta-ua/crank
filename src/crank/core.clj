@@ -19,16 +19,17 @@
        doall))
 
 
-(defn check-job [job-name {:keys [consumer stop! report config] :as job}]
-  (let [diff (- (System/currentTimeMillis)
-                (:time (first report)))]
-    (if (> diff (:timeout config 10000))
-      (do
-        (log/infof "job %s seems to be dead since %s ms ago: %s"
-          job-name diff (pr-str report))
-        (stop!)
-        (job/start-job config consumer))
-      job)))
+(defn check-job [job-name {:keys [stop! report config] :as job}]
+  (when (first report)
+    (let [diff (- (System/currentTimeMillis)
+                  (:time (first report)))]
+      (if (> diff (:timeout config 10000))
+        (do
+          (log/infof "job %s seems to be dead since %s ms ago: %s"
+            job-name diff (pr-str report))
+          (stop!)
+          (job/start-job config))
+        job))))
 
 
 (defn run-master [running]
@@ -39,11 +40,10 @@
       (recur))
 
     (catch InterruptedException e
-      (log/debug "monitor master exiting")
-      :pass)))
+      (log/debug "monitor master exiting"))))
 
 
-(defrecord Monitor [reporting-cb *running master]
+(defrecord Monitor [uname reporting-cb *running master]
   IMonitor
   (start [this job-name config]
     (when-let [old-job (get @*running job-name)]
@@ -53,6 +53,7 @@
     (when (or (nil? @master)
               (not (.isAlive @master)))
       (reset! master (doto (Thread. #(run-master *running))
+                       (.setName (str uname "-master"))
                        (.start))))
 
     (let [send-report (fn [r]
@@ -61,6 +62,7 @@
                         (when reporting-cb
                           (reporting-cb r)))
           job         (job/start-job (assoc config
+                                       :monitor-name uname
                                        :job-name job-name
                                        :send-report send-report))]
       (swap! *running assoc job-name job)))
@@ -83,7 +85,9 @@
 
 (defn init
   ([] (init {}))
-  ([{:keys [report]}]
-   (map->Monitor {:reporting-cb report
+  ([{:keys [name report]
+     :or   {name "crank"}}]
+   (map->Monitor {:uname        name
+                  :reporting-cb report
                   :*running     (atom {})
                   :master       (atom nil)})))

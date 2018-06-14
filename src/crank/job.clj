@@ -63,24 +63,25 @@
                         :job-name  job-name
                         :type      :exception
                         :exception e})
-          (throw e))))))
+          (throw e))))
+
+    (finally
+      (.close consumer)
+      (log/debugf "job %s loop exiting" job-name))))
 
 
-(defn start-job
-  ([{:keys [kafka] :as config}]
-   (start-job config
-     (kafka/make-consumer kafka)))
+(defn start-job [{:keys [kafka monitor-name job-name topics] :as config}]
+  (log/infof "Starting job %s" job-name)
 
-  ([{:keys [job-name topics] :as config} consumer]
-   (log/infof "Starting job %s" job-name)
-   (.subscribe consumer topics)
+  (let [consumer (kafka/make-consumer kafka)]
+    (.subscribe consumer topics)
 
-   (let [stop   (atom false)
-         worker (doto (Thread. #(run-loop consumer stop config))
-                  (.start))]
-     {:config   config
-      :worker   worker
-      :consumer consumer
-      :report   []
-      :stop!    #(do (reset! stop true)
-                     (.wakeup consumer))})))
+    (let [stop   (atom false)
+          worker (doto (Thread. #(run-loop consumer stop config))
+                   (.setName (str monitor-name "-" job-name))
+                   (.start))]
+      {:config   config
+       :worker   worker
+       :report   []
+       :stop!    #(do (reset! stop true)
+                      (.wakeup consumer))})))
