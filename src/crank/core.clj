@@ -78,7 +78,7 @@
       (fn [jobs]
         (let [{:keys [stop!]} (get jobs job-name)]
           (when stop!
-            (log/infof "trying to stop job %s" job-name)
+            (log/infof "asking job %s to stop" job-name)
             (stop!)))
         (dissoc jobs job-name)))))
 

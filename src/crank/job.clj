@@ -15,16 +15,21 @@
 
 
 (defn run-loop [consumer stop {:keys [job-name func send-report]}]
-  (send-report {:time     (System/currentTimeMillis)
-                :job-name job-name
-                :type     :start})
+  (let [tps (.assignment consumer)]
+    (send-report {:time     (System/currentTimeMillis)
+                  :job-name job-name
+                  :type     :start
+                  :offset   (for [tp tps] (.position consumer tp))}))
+
   (try
     (loop [messages nil]
-      (when-not (nil? messages)
-        (send-report {:time     (System/currentTimeMillis)
-                      :job-name job-name
-                      :type     :poll
-                      :count    (count messages)}))
+      (when-not (nil? messages) ; which is always except for first time
+        (let [tps (.assignment consumer)]
+          (send-report {:time     (System/currentTimeMillis)
+                        :job-name job-name
+                        :type     :poll
+                        :count    (count messages)
+                        :offset   (for [tp tps] (.position consumer tp))})))
 
       (doseq [message messages]
         (when @stop
@@ -56,13 +61,13 @@
           (send-report {:time     (System/currentTimeMillis)
                         :job-name job-name
                         :type     :stop})
-          (log/infof "Stopping job %s" job-name))
+          (log/infof "stopping job %s" job-name))
         (do
-          (log/errorf e "Job %s died" job-name)
+          (log/errorf e "job %s died" job-name)
           #_(send-report {:time      (System/currentTimeMillis)
-                        :job-name  job-name
-                        :type      :exception
-                        :exception e})
+                          :job-name  job-name
+                          :type      :exception
+                          :exception e})
           (throw e))))
 
     (finally
@@ -71,15 +76,17 @@
 
 
 (defn start-job [{:keys [kafka monitor-name job-name topics] :as config}]
-  (log/infof "Starting job %s" job-name)
+  (log/infof "starting job %s" job-name)
 
   (let [consumer (kafka/make-consumer kafka)]
     (.subscribe consumer topics)
 
     (let [stop   (atom false)
-          worker (doto (Thread. #(run-loop consumer stop config))
-                   (.setName (str monitor-name "-" job-name))
-                   (.start))]
+          worker (Thread. #(run-loop consumer stop config))]
+
+      (.setName worker (str monitor-name "-" job-name "-" (.getId worker)))
+      (.start worker)
+
       {:config   config
        :worker   worker
        :report   []
