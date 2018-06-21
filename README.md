@@ -20,10 +20,12 @@ simplicity and understandability.
 (crank/start monitor "mk order"
   {:topic   "mk_order"
    :func    prn
-   :timeout 5000                ; optional
+   :timeout 5000  ;; optional
+   :batch?  true  ;; optional, `:func` expects a batch of messages,
+                  ;; batch size controlled by [:kafka :batch-size]
    :kafka   {:uri   "kafka1:9192"
              :group "crank"
-             :batch-size 10000}}) ; optional
+             :batch-size 10000}})  ;; optional
 ```
 
 ## Description

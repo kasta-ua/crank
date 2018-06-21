@@ -61,6 +61,30 @@
       (is (= 1 (count @messages)))
       (is (= "just a value" (some-> @messages first :value slurp)))))
 
+  (testing "starting batch job and processing a batch works"
+    (let [topic             "batch"
+          batches           (atom [])
+          [mon has-started] (start topic
+                              {:func       (fn [batch]
+                                             (swap! batches conj batch))
+                               :batch?     true
+                               :batch-size 2})]
+      @has-started
+
+      (ck/send! topic "1")
+      @(ck/send! topic "2")
+      (Thread/sleep 100)
+
+      (ck/send! topic "3")
+      @(ck/send! topic "4")
+      (Thread/sleep 100)
+
+      (crank/stop mon topic)
+
+      (is (= 2 (count @batches)))
+      (is (= ["1" "2"] (some->> @batches first (map :value) (map slurp))))
+      (is (= ["3" "4"] (some->> @batches second (map :value) (map slurp))))))
+
   (testing "what if an exception happened"
     (let [topic "exc"
           ;; This creates topic and allows to set predictable offset
