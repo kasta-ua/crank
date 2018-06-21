@@ -14,7 +14,22 @@
    :value     (.value record)})
 
 
-(defn run-loop [consumer stop {:keys [job-name func send-report]}]
+(defn process-batch [batch stop {:keys [job-name func send-report]}]
+  (when @stop
+    (throw (ex-info "stop batch" {:stop true})))
+
+  (func batch)
+
+  (send-report {:time         (System/currentTimeMillis)
+                :job-name     job-name
+                :type         :batch
+                :topic        (-> batch first :topic)
+                :start-offset (-> batch first :offset)
+                :end-offset   (-> batch last  :offset)
+                :partition    (-> batch first :partition)}))
+
+
+(defn run-loop [consumer stop {:keys [job-name func send-report] :as config}]
   (send-report {:time     (System/currentTimeMillis)
                 :job-name job-name
                 :type     :start})
@@ -27,18 +42,21 @@
                       :type     :poll
                       :count    (count messages)}))
 
-      (doseq [message messages]
-        (when @stop
-          (throw (ex-info "stop iteration" {:stop true})))
+      (if (:batch? config)
+        (when (seq messages)
+          (process-batch messages stop config))
+        (doseq [message messages]
+          (when @stop
+            (throw (ex-info "stop iteration" {:stop true})))
 
-        (func message)
+          (func message)
 
-        (send-report {:time      (System/currentTimeMillis)
-                      :job-name  job-name
-                      :type      :message
-                      :topic     (:topic message)
-                      :offset    (:offset message)
-                      :partition (:partition message)}))
+          (send-report {:time      (System/currentTimeMillis)
+                        :job-name  job-name
+                        :type      :message
+                        :topic     (:topic message)
+                        :offset    (:offset message)
+                        :partition (:partition message)})))
 
       (when (seq messages)
         (.commitSync consumer))
