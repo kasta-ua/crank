@@ -3,8 +3,6 @@
 Crank is a library for building job-processing systems. It's main goals are
 simplicity and understandability.
 
-**NOTE: tests are not working yet.**
-
 ## Limitations
 
 - the only source for messages is kafka
@@ -20,12 +18,14 @@ simplicity and understandability.
 (crank/start monitor "mk order"
   {:topic   "mk_order"
    :func    prn
-   :timeout 5000  ;; optional
-   :batch?  true  ;; optional, `:func` expects a batch of messages,
-                  ;; batch size controlled by [:kafka :batch-size]
+   :timeout 10000 ;; ms, optional
+   :batch?  true  ;; Optional, `:func` will be passed a batch of messages
+                  ;; rather than a single message.
+                  ;; Batch size controlled by [:kafka :batch-size]
    :kafka   {:uri   "kafka1:9192"
              :group "crank"
-             :batch-size 10000}})  ;; optional
+             :batch-size 10000}})  ;; upper limit on messages to be read from
+                                   ;; Kafka in one request
 ```
 
 ## Description
