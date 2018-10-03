@@ -11,6 +11,7 @@
 (defn update-vals [m f]
   (into {} (map (fn [[k v]] [k (f k v)]) m)))
 
+
 (defn cons-limit [coll limit item]
   (->> (cons item coll)
        (take limit)
@@ -22,16 +23,26 @@
     (update job :report cons-limit 10 report)))
 
 
+(defn check-timeout [attempts issue-time timeout]
+  (let [diff (- (System/currentTimeMillis) issue-time)
+        to-check (min (* 10 60 1000) ; 10 mins is a maximum
+                   (* timeout (Math/pow 2 attempts)))]
+    (when (> diff to-check)
+      diff)))
+
+
 (defn check-job [job-name {:keys [stop! report config] :as job}]
-  (when (first report)
-    (let [diff (- (System/currentTimeMillis)
-                  (:time (first report)))]
-      (if (> diff (:timeout config 10000))
+  (when-let [issue (first report)]
+    (let [{:keys [attempts time] :or {attempts 0}} issue
+
+          diff (check-timeout attempts time (:timeout config 10000))]
+
+      (if diff
         (do
           (log/infof "job %s seems to be dead since %s ms ago: %s"
             job-name diff (pr-str report))
           (stop!)
-          (job/start-job config))
+          (job/start-job (assoc config :attempts (inc attempts))))
         job))))
 
 
