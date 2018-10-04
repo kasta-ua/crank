@@ -14,19 +14,11 @@
    :value     (.value record)})
 
 
-(defn process-batch [batch stop {:keys [job-name func send-report]}]
-  (when @stop
-    (throw (ex-info "stop batch" {:stop true})))
-
-  (func batch)
-
-  (send-report {:time         (System/currentTimeMillis)
-                :job-name     job-name
-                :type         :batch
-                :topic        (-> batch first :topic)
-                :start-offset (-> batch first :offset)
-                :end-offset   (-> batch last  :offset)
-                :partition    (-> batch first :partition)}))
+(defn messages->offsets [messages]
+  (into {}
+    (for [[partition messages] (group-by :partition messages)]
+      [partition [(:offset (first messages))
+                  (:offset (last messages))]])))
 
 
 (defn run-loop [consumer stop {:keys [job-name func send-report topics attempts]
@@ -53,7 +45,14 @@
 
         (if (:batch? config)
           (when (seq messages)
-            (process-batch messages stop config))
+            (func messages)
+            (send-report {:time     (System/currentTimeMillis)
+                          :job-name job-name
+                          :job-id   job-id
+                          :type     :batch
+                          :topic    (:topic (first messages))
+                          :offsets  (messages->offsets messages)}))
+
           (doseq [message messages]
             (when @stop
               (throw (ex-info "stop iteration" {:stop true})))
@@ -68,12 +67,11 @@
                           :offset    (:offset message)
                           :partition (:partition message)})))
 
-        (when (seq messages)
-          (.commitSync consumer))
-
         (if @stop
           (throw (ex-info "stop job" {:stop true}))
           (do
+            (when (seq messages)
+              (.commitSync consumer))
             (recur (->> (.poll consumer 100)
                         (mapv record->message))))))
 
@@ -87,6 +85,7 @@
                           :job-id   job-id
                           :type     :stop})
             (log/infof "stopping job %s" job-name))
+
           (do
             (log/errorf e "job %s died" job-name)
             (send-report {:time      (System/currentTimeMillis)
