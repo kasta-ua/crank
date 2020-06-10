@@ -1,3 +1,7 @@
+## 1.2.1
+
+* Control batch size in bytes via `:batch-bytes` option
+
 ## 1.2.0
 
 * Feature: job timeout rises up to 10 minutes on each unsuccessfull attempt (by
