@@ -2,7 +2,8 @@
   (:require [clojure.tools.logging :as log]
 
             [crank.kafka :as kafka])
-  (:import [org.apache.kafka.common.errors WakeupException]))
+  (:import [java.time Duration]
+           [org.apache.kafka.common.errors WakeupException]))
 
 
 (defn record->message [record]
@@ -93,6 +94,7 @@
                           :job-id    job-id
                           :type      :exception
                           :exception e})
+            (.close consumer Duration/ZERO)
             (throw e))))
 
       (finally

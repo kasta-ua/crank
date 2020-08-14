@@ -32,7 +32,7 @@
 
 
 (defn check-job [job-name {:keys [stop! report config] :as job}]
-  (when-let [issue (first report)]
+  (if-let [issue (first report)]
     (let [{:keys [attempts time] :or {attempts 0}} issue
 
           diff (check-timeout attempts time (:timeout config 10000))]
@@ -43,7 +43,8 @@
             job-name diff (pr-str report))
           (stop!)
           (job/start-job (assoc config :attempts (inc attempts))))
-        job))))
+        job))
+    job))
 
 
 (defn run-master [running]
