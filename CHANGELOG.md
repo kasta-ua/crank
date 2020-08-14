@@ -1,3 +1,9 @@
+## 1.2.2
+
+* Kafka client version update
+* Stop consumer immediately if job fails
+* Don't leak job if there is no report yet
+
 ## 1.2.1
 
 * Control batch size in bytes via `:batch-bytes` option
