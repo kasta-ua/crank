@@ -1,3 +1,5 @@
+* Report more data when job is considered dead
+
 ## 1.2.2
 
 * Kafka client version update

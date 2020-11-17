@@ -1,6 +1,7 @@
 (ns crank.core
   (:require [clojure.tools.logging :as log]
-            [crank.job :as job]))
+            [crank.job :as job]
+            [clojure.string :as str]))
 
 
 (defprotocol IMonitor
@@ -31,7 +32,7 @@
       diff)))
 
 
-(defn check-job [job-name {:keys [stop! report config] :as job}]
+(defn check-job [job-name {:keys [stop! report config worker] :as job}]
   (if-let [issue (first report)]
     (let [{:keys [attempts time] :or {attempts 0}} issue
 
@@ -39,8 +40,12 @@
 
       (if diff
         (do
-          (log/infof "job %s seems to be dead since %s ms ago: %s"
-            job-name diff (pr-str report))
+          (log/infof "job %s [%s] seems to be dead since %s ms ago: %s\n%s"
+            job-name
+            (.getName worker)
+            diff
+            (pr-str report)
+            (str/join "\n" (.getStackTrace worker)))
           (stop!)
           (job/start-job (assoc config :attempts (inc attempts))))
         job))
