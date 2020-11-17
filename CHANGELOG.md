@@ -1,3 +1,5 @@
+## 1.2.3
+
 * Report more data when job is considered dead
 
 ## 1.2.2
