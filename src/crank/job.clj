@@ -35,7 +35,8 @@
     (.subscribe consumer topics)
 
     (try
-      (loop [messages nil]
+      (loop [messages nil
+             previous (System/currentTimeMillis)]
         ;; messages are at least an empty vector, except for the first time
         (when-not (nil? messages)
           (send-report {:time     (System/currentTimeMillis)
@@ -47,12 +48,15 @@
         (if (:batch? config)
           (when (seq messages)
             (func messages)
-            (send-report {:time     (System/currentTimeMillis)
-                          :job-name job-name
-                          :job-id   job-id
-                          :type     :batch
-                          :topic    (:topic (first messages))
-                          :offsets  (messages->offsets messages)}))
+
+            (let [now (System/currentTimeMillis)]
+              (send-report {:time     now
+                            :duration (- now previous)
+                            :job-name job-name
+                            :job-id   job-id
+                            :type     :batch
+                            :topic    (:topic (first messages))
+                            :offsets  (messages->offsets messages)})))
 
           (doseq [message messages]
             (when @stop
@@ -60,13 +64,15 @@
 
             (func message)
 
-            (send-report {:time      (System/currentTimeMillis)
-                          :job-name  job-name
-                          :job-id    job-id
-                          :type      :message
-                          :topic     (:topic message)
-                          :offset    (:offset message)
-                          :partition (:partition message)})))
+            (let [now (System/currentTimeMillis)]
+              (send-report {:time      now
+                            :duration  (- now previous)
+                            :job-name  job-name
+                            :job-id    job-id
+                            :type      :message
+                            :topic     (:topic message)
+                            :offset    (:offset message)
+                            :partition (:partition message)}))))
 
         (if @stop
           (throw (ex-info "stop job" {:stop true}))
@@ -74,7 +80,8 @@
             (when (seq messages)
               (.commitSync consumer))
             (recur (->> (.poll consumer 100)
-                        (mapv record->message))))))
+                        (mapv record->message))
+                   (System/currentTimeMillis)))))
 
       (catch Exception e
         (if (or (:stop (ex-data e))

@@ -1,3 +1,5 @@
+* `:message` and `:batch` reports now contain `:duration` of a call
+
 ## 1.2.3
 
 * Report more data when job is considered dead
