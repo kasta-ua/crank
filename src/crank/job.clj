@@ -86,7 +86,8 @@
       (catch Exception e
         (if (or (:stop (ex-data e))
                 (and @stop
-                     (instance? WakeupException e)))
+                     (or (instance? WakeupException e)
+                         (instance? InterruptedException e))))
           (do
             (send-report {:time     (System/currentTimeMillis)
                           :job-name job-name
@@ -123,4 +124,5 @@
      :worker worker
      :report []
      :stop!  #(do (reset! stop true)
+                  (.interrupt worker)
                   (.wakeup consumer))}))

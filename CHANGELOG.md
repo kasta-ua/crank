@@ -1,3 +1,5 @@
+## 1.2.4
+
 * `:message` and `:batch` reports now contain `:duration` of a call
 
 ## 1.2.3
