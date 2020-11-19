@@ -124,5 +124,4 @@
      :worker worker
      :report []
      :stop!  #(do (reset! stop true)
-                  (.interrupt worker)
                   (.wakeup consumer))}))

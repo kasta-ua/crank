@@ -1,3 +1,5 @@
+* `Thread/interrupt` is not exactly the best thing in the world
+
 ## 1.2.4
 
 * `:message` and `:batch` reports now contain `:duration` of a call
