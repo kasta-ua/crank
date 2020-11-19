@@ -11,7 +11,7 @@
 (def dependencies
   (deps->vec (:deps +deps+)))
 
-(defproject ua.kasta/crank "1.2.4"
+(defproject ua.kasta/crank "1.2.5"
   :dependencies ~dependencies
   :description "Building block for job processing"
   :license {:name "Eclipse Public License - v1.0"

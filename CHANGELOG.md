@@ -1,3 +1,5 @@
+## 1.2.5
+
 * `Thread/interrupt` is not exactly the best thing in the world
 
 ## 1.2.4
