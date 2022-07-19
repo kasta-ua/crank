@@ -9,10 +9,6 @@
   (stop [this] [this job-name]))
 
 
-(defn update-vals [m f]
-  (into {} (map (fn [[k v]] [k (f k v)]) m)))
-
-
 (defn cons-limit [coll limit item]
   (->> (cons item coll)
        (take limit)
