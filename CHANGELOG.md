@@ -1,3 +1,7 @@
+## 1.2.6
+
+* `update-vals` is now in `clojure.core`
+
 ## 1.2.5
 
 * `Thread/interrupt` is not exactly the best thing in the world
