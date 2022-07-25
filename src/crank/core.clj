@@ -28,7 +28,7 @@
       diff)))
 
 
-(defn check-job [job-name {:keys [stop! report config worker] :as job}]
+(defn check-job [{:keys [job-name stop! report config worker] :as job}]
   (if-let [issue (first report)]
     (let [{:keys [attempts time] :or {attempts 0}} issue
 

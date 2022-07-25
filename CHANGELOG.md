@@ -1,3 +1,7 @@
+## 1.2.7
+
+* Fixed ArityException introduced in 1.2.6
+
 ## 1.2.6
 
 * `update-vals` is now in `clojure.core`
