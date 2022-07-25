@@ -7,7 +7,7 @@ test-repl:
 	clj -C:test -R:test
 
 nrepl:
-	clj -C:test -R:test:repl -e '(require (quote cider-nrepl.main)) (cider-nrepl.main/init ["cider.nrepl/cider-middleware"])'
+	clj -A:test:repl
 
 deploy:
 	lein deploy clojars

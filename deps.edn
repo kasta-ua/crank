@@ -14,6 +14,7 @@
           ch.qos.logback/logback-classic  {:mvn/version "1.2.3"}
           org.slf4j/log4j-over-slf4j      {:mvn/version "1.7.25"}}}
   :repl {:extra-deps
-         {cider/cider-nrepl       {:mvn/version "0.17.0"}
-          org.clojure/tools.nrepl {:mvn/version "0.2.12"}
-          refactor-nrepl          {:mvn/version "2.3.1"}}}}}
+         {cider/cider-nrepl             {:mvn/version "0.28.5"}
+          nrepl/nrepl                   {:mvn/version "0.9.0"}
+          refactor-nrepl/refactor-nrepl {:mvn/version "3.5.3"}}
+         :main-opts ["-m" "nrepl.cmdline" "--middleware" "[cider.nrepl/cider-middleware]"]}}}
