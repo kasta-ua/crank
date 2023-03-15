@@ -1,11 +1,8 @@
 (ns crank.kafka
   (:require [clojure.string :as str])
-  (:import [org.apache.kafka.common.serialization
-            ByteArraySerializer ByteArrayDeserializer]
+  (:import [org.apache.kafka.common.serialization ByteArrayDeserializer]
            [org.apache.kafka.common TopicPartition]
            [org.apache.kafka.clients.consumer KafkaConsumer OffsetAndMetadata]
-           [org.apache.kafka.clients.producer
-            KafkaProducer ProducerRecord]
            [java.net InetAddress]))
 
 
@@ -13,16 +10,20 @@
   (-> (InetAddress/getLocalHost) .getHostName (str/split #"\.") first))
 
 
+(defn normalize-config [config]
+  (let [c (cond-> {:bootstrap.servers  (:uri config)
+                   :group.id           (:group config)
+                   :max.poll.records   (int (:batch-size config 10000))
+                   :auto.offset.reset  "latest"
+                   :enable.auto.commit false
+                   :key.deserializer   ByteArrayDeserializer
+                   :value.deserializer ByteArrayDeserializer}
+            (:batch-bytes config) (assoc :fetch.max.bytes (int (:batch-bytes config))))]
+    (merge c (dissoc config :uri :group :batch-size :batch-bytes))))
+
+
 (defn make-consumer-config [config]
-  (cond-> {"bootstrap.servers"  (:uri config)
-           "group.id"           (:group config)
-           "max.poll.records"   (int (:batch-size config 10000))
-           "auto.offset.reset"  "latest"
-           "enable.auto.commit" false
-           "key.deserializer"   ByteArrayDeserializer
-           "value.deserializer" ByteArrayDeserializer}
-    (:batch-bytes config)
-    (assoc "fetch.max.bytes" (int (:batch-bytes config)))))
+  (reduce-kv (fn [acc k v] (assoc acc (name k) v)) {} (normalize-config config)))
 
 
 (defn make-consumer [config]
