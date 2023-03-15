@@ -1,3 +1,8 @@
+## 1.2.8
+
+* Fixed `job-name` being `nil` in `check-job` logs
+* Consumer config accepts any consumer property
+
 ## 1.2.7
 
 * Fixed ArityException introduced in 1.2.6

@@ -21,11 +21,10 @@ simplicity and understandability.
    :timeout 10000 ;; ms, optional
    :batch?  true  ;; Optional, `:func` will be passed a batch of messages
                   ;; rather than a single message.
-                  ;; Batch size controlled by [:kafka :batch-size]
-   :kafka   {:uri   "kafka1:9192"
-             :group "crank"
-             :batch-size 10000}})  ;; upper limit on messages to be read from
-                                   ;; Kafka in one request
+                  ;; Batch size controlled by [:kafka :max.poll.records]
+   :kafka   {:bootstrap.servers "kafka1:9192"
+             :group.id          "crank"
+             :max.poll.records  (int 10000)}}) ; upper limit on messages to be read from Kafka in one request (default 10000)
 ```
 
 ## Description
