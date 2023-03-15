@@ -28,7 +28,7 @@
       diff)))
 
 
-(defn check-job [{:keys [job-name stop! report config worker] :as job}]
+(defn check-job [{:keys [stop! report config worker] :as job}]
   (if-let [issue (first report)]
     (let [{:keys [attempts time] :or {attempts 0}} issue
 
@@ -37,7 +37,7 @@
       (if diff
         (do
           (log/infof "job %s [%s] seems to be dead since %s ms ago: %s\n%s"
-            job-name
+            (:job-name config)
             (.getName worker)
             diff
             (pr-str report)
