@@ -22,8 +22,9 @@
                   (:offset (last messages))]])))
 
 
-(defn run-loop [consumer stop {:keys [job-name func send-report topics attempts batch? commit-before?]
-                               :or   {attempts 0}}]
+(defn run-loop [consumer stop {:keys [job-name func send-report topics attempts]
+                               :or   {attempts 0}
+                               :as   config}]
 
   (let [job-id (.getId (Thread/currentThread))]
     (send-report {:time     (System/currentTimeMillis)
@@ -44,10 +45,7 @@
                         :type     :poll
                         :count    (count messages)}))
 
-        (when (and (seq messages) commit-before?)
-          (.commitSync consumer))
-
-        (if batch?
+        (if (:batch? config)
           (when (seq messages)
             (func messages)
 
@@ -79,7 +77,7 @@
         (if @stop
           (throw (ex-info "stop job" {:stop true}))
           (do
-            (when (and (seq messages) (not commit-before?))
+            (when (seq messages)
               (.commitSync consumer))
             (recur (->> (.poll consumer 100)
                         (mapv record->message))
