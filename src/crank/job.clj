@@ -79,7 +79,7 @@
           (do
             (when (seq messages)
               (.commitSync consumer))
-            (recur (->> (.poll consumer 100)
+            (recur (->> (.poll consumer (Duration/ofMillis 100))
                         (mapv record->message))
                    (System/currentTimeMillis)))))
 

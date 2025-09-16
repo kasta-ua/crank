@@ -3,7 +3,8 @@
             [clojure.tools.logging :as log]
             [clojure.java.io :as io]
             [me.raynes.fs :as fs])
-  (:import [org.apache.curator.test TestingServer]
+  (:import [java.time Duration]
+           [org.apache.curator.test TestingServer]
            [kafka.server KafkaConfig KafkaServerStartable]
            [org.apache.kafka.common TopicPartition]
            [org.apache.kafka.clients.producer KafkaProducer ProducerRecord]
@@ -30,7 +31,7 @@
         _        (log/info "acquiring input...")
         input    (input/acquire input)
         ;; .subscribe is lazy, this forces it
-        _        (.poll (:consumer input) 1)
+        _        (.poll (:consumer input) (Duration/ofMillis 1))
         _        (send-message "test" "qweqwe")
         _        (log/info "reading messages...")
         messages (input/receive input 100)]

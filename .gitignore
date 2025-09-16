@@ -3,3 +3,11 @@
 /pom.xml*
 .lein-repl-history
 .nrepl-port
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.idea_modules/

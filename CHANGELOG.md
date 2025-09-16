@@ -1,3 +1,11 @@
+## 2.0.0
+
+### Breaking Changes
+* **BREAKING**: Updated Kafka client from 2.6.0 to 4.1.0
+* Now requires Java 8+ (Kafka 4.x uses `java.time.Duration` for timeouts)
+* Projects using crank must also update to Kafka 4.x
+* `.poll()` method now uses `Duration` instead of `long` for timeout parameter
+
 ## 1.2.8
 
 * Fixed `job-name` being `nil` in `check-job` logs
