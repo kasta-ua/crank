@@ -1,0 +1,128 @@
+(ns crank.monitor-test
+  "Monitor-loop tests. No Kafka on purpose: job/start-job is stubbed out, so
+  these stay fast and deterministic."
+  (:require [clojure.test :as test :refer [deftest is testing]]
+
+            [crank.core :as crank]
+            [crank.job :as job]))
+
+
+(defn- fake-worker [name]
+  (Thread. ^Runnable (fn []) ^String name))
+
+
+(defn- fake-job
+  "A job entry shaped the way crank.job/start-job builds one. silent-ms is how
+  long ago it last reported."
+  [{:keys [job-name silent-ms attempts stops]
+    :or   {silent-ms 0 attempts 0}}]
+  {:config {:job-name job-name :timeout 1000}
+   :worker (fake-worker (str "fake-" job-name))
+   :report [{:type     :exception
+             :job-name job-name
+             :attempts attempts
+             :time     (- (System/currentTimeMillis) silent-ms)}]
+   :stop!  #(swap! stops conj job-name)})
+
+
+(defn- restarted-job
+  "What the stubbed start-job hands back."
+  [config stops]
+  {:config config
+   :worker (fake-worker "fake-restarted")
+   :report []
+   :stop!  #(swap! stops conj "restarted")})
+
+
+(deftest job-timeout-test
+  (let [stops (atom [])]
+    (testing "a job that reported just now is alive"
+      (is (nil? (crank/job-timeout (fake-job {:job-name "j" :stops stops})))))
+
+    (testing "a job silent past its timeout reports how long it has been silent"
+      (is (<= 5000 (crank/job-timeout (fake-job {:job-name  "j"
+                                                 :silent-ms 5000
+                                                 :stops     stops})))))
+
+    (testing "the timeout doubles with every attempt"
+      ;; 1000 * 2^3 = 8000, so 5 seconds of silence is still within budget
+      (is (nil? (crank/job-timeout (fake-job {:job-name  "j"
+                                              :silent-ms 5000
+                                              :attempts  3
+                                              :stops     stops})))))))
+
+
+(deftest restart-happens-exactly-once
+  (testing "a job is restarted once even when *running keeps changing underneath"
+    (let [stops   (atom [])
+          starts  (atom 0)
+          running (atom nil)]
+      (reset! running
+        {"dead"  (fake-job {:job-name "dead" :silent-ms 5000 :stops stops})
+         "alive" (fake-job {:job-name "alive" :stops stops})})
+
+      (with-redefs [job/start-job
+                    (fn [config]
+                      ;; A live job reporting in the middle of a restart. This
+                      ;; is the regression: while the restart lived inside
+                      ;; swap!, such a write invalidated the CAS, swap! reran
+                      ;; the whole thing and start-job spawned another consumer
+                      ;; on every retry — orphaned, since only the last map
+                      ;; would ever be installed.
+                      ;;
+                      ;; Only the first call perturbs the atom: otherwise the
+                      ;; old code never converges and the test hangs instead of
+                      ;; failing.
+                      (when (zero? @starts)
+                        (swap! running update "alive" crank/add-report
+                          {:type :message :time (System/currentTimeMillis)}))
+                      (swap! starts inc)
+                      (restarted-job config stops))]
+        (crank/check-jobs! running))
+
+      (is (= 1 @starts)
+        "exactly one worker started")
+      (is (= ["dead"] @stops)
+        "only the dead job was asked to stop")
+      (is (= "fake-restarted" (.getName ^Thread (:worker (get @running "dead"))))
+        "the monitor now tracks the new worker, not the dead one")
+      (is (= 1 (:attempts (:config (get @running "dead"))))
+        "attempts counted up for the backoff"))))
+
+
+(deftest vanished-job-does-not-leave-a-worker-behind
+  (testing "a job stopped mid-restart gets its fresh worker stopped, not orphaned"
+    (let [stops   (atom [])
+          running (atom nil)]
+      (reset! running
+        {"dead" (fake-job {:job-name "dead" :silent-ms 5000 :stops stops})})
+
+      (with-redefs [job/start-job
+                    (fn [config]
+                      ;; Monitor.stop raced us and dropped the job
+                      (swap! running dissoc "dead")
+                      (restarted-job config stops))]
+        (crank/check-jobs! running))
+
+      (is (= ["dead" "restarted"] @stops)
+        "the worker we started for a job that no longer exists is stopped")
+      (is (empty? @running)
+        "and the stopped job is not resurrected"))))
+
+
+(deftest live-jobs-are-left-alone
+  (testing "nothing is restarted while every job keeps reporting"
+    (let [stops   (atom [])
+          starts  (atom 0)
+          running (atom nil)]
+      (reset! running
+        {"a" (fake-job {:job-name "a" :stops stops})
+         "b" (fake-job {:job-name "b" :silent-ms 500 :stops stops})})
+
+      (with-redefs [job/start-job (fn [config]
+                                    (swap! starts inc)
+                                    (restarted-job config stops))]
+        (crank/check-jobs! running))
+
+      (is (zero? @starts))
+      (is (empty? @stops)))))

@@ -5,12 +5,15 @@
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps
-         {me.raynes/fs                    {:mvn/version "1.4.6"}
-          org.apache.kafka/kafka_2.13     {:mvn/version "4.1.0"
-                                           :exclusions  [org.slf4j/slf4j-log4j12
-                                                         log4j/log4j]}
+         ;; Embedded broker for the integration tests. Kafka 4 dropped
+         ;; ZooKeeper, so kafka_2.13 + curator-test cannot start a broker any
+         ;; more; KafkaClusterTestKit (KRaft) lives here and pulls the server
+         ;; side in by itself.
+         {org.apache.kafka/kafka-test-common-runtime
+          {:mvn/version "4.1.0"
+           :exclusions  [org.slf4j/slf4j-log4j12 log4j/log4j]}
+
           org.clojure/core.async          {:mvn/version "0.4.474"}
-          org.apache.curator/curator-test {:mvn/version "2.8.0"}
           ch.qos.logback/logback-classic  {:mvn/version "1.2.3"}
           org.slf4j/log4j-over-slf4j      {:mvn/version "1.7.25"}}}
   :repl {:extra-deps

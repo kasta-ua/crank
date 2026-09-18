@@ -1,3 +1,15 @@
+## 2.0.1
+
+* Fixed the monitor spawning orphaned consumers: `check-job` ran `stop!` and
+  `start-job` inside `swap!`, and a lost CAS reran them without undoing the
+  threads already started. Split into pure `job-timeout` and effectful
+  `check-jobs!`; `check-job` is gone.
+* `Monitor.stop` no longer calls `stop!` from inside `swap!` either.
+* A worker started for a job that was stopped mid-restart is now stopped
+  instead of being left running.
+* Tests run on an embedded KRaft broker (`KafkaClusterTestKit`) — Kafka 4
+  removed ZooKeeper, so the previous fixture could not start a broker at all.
+
 ## 2.0.0
 
 ### Breaking Changes
