@@ -4,9 +4,12 @@
   `start-job` inside `swap!`, and a lost CAS reran them without undoing the
   threads already started. Split into pure `job-timeout` and effectful
   `check-jobs!`; `check-job` is gone.
-* `Monitor.stop` no longer calls `stop!` from inside `swap!` either.
+* `Monitor.stop` no longer calls `stop!` from inside `swap!` either, and stops
+  the master before the jobs, so it cannot restart a job being stopped.
 * A worker started for a job that was stopped mid-restart is now stopped
   instead of being left running.
+* A job whose consumer cannot be built (`KafkaException`) no longer kills the
+  master thread; the restart is retried on the next pass.
 * Tests run on an embedded KRaft broker (`KafkaClusterTestKit`) — Kafka 4
   removed ZooKeeper, so the previous fixture could not start a broker at all.
 

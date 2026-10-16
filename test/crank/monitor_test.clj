@@ -4,7 +4,8 @@
   (:require [clojure.test :as test :refer [deftest is testing]]
 
             [crank.core :as crank]
-            [crank.job :as job]))
+            [crank.job :as job])
+  (:import [org.apache.kafka.common KafkaException]))
 
 
 (defn- fake-worker [name]
@@ -12,15 +13,15 @@
 
 
 (defn- fake-job
-  "A job entry shaped the way crank.job/start-job builds one. silent-ms is how
-  long ago it last reported."
-  [{:keys [job-name silent-ms attempts stops]
-    :or   {silent-ms 0 attempts 0}}]
+  "A job entry shaped the way crank.job/start-job builds one, after its worker
+  died. silent-ms is how long ago it last reported. Like the real :exception
+  report, this one has no :attempts — only :start carries it."
+  [{:keys [job-name silent-ms stops]
+    :or   {silent-ms 0}}]
   {:config {:job-name job-name :timeout 1000}
    :worker (fake-worker (str "fake-" job-name))
    :report [{:type     :exception
              :job-name job-name
-             :attempts attempts
              :time     (- (System/currentTimeMillis) silent-ms)}]
    :stop!  #(swap! stops conj job-name)})
 
@@ -44,12 +45,13 @@
                                                  :silent-ms 5000
                                                  :stops     stops})))))
 
-    (testing "the timeout doubles with every attempt"
+    (testing "the timeout doubles with every attempt of the latest :start"
       ;; 1000 * 2^3 = 8000, so 5 seconds of silence is still within budget
-      (is (nil? (crank/job-timeout (fake-job {:job-name  "j"
-                                              :silent-ms 5000
-                                              :attempts  3
-                                              :stops     stops})))))))
+      (is (nil? (crank/job-timeout
+                  (assoc (fake-job {:job-name "j" :stops stops})
+                    :report [{:type     :start
+                              :attempts 3
+                              :time     (- (System/currentTimeMillis) 5000)}])))))))
 
 
 (deftest restart-happens-exactly-once
@@ -85,9 +87,29 @@
       (is (= ["dead"] @stops)
         "only the dead job was asked to stop")
       (is (= "fake-restarted" (.getName ^Thread (:worker (get @running "dead"))))
-        "the monitor now tracks the new worker, not the dead one")
-      (is (= 1 (:attempts (:config (get @running "dead"))))
-        "attempts counted up for the backoff"))))
+        "the monitor now tracks the new worker, not the dead one"))))
+
+
+(deftest fresh-worker-reporting-start-is-kept
+  (testing "the :start of the new worker landing before it is installed does not count as the job gone"
+    (let [stops   (atom [])
+          running (atom nil)]
+      (reset! running
+        {"dead" (fake-job {:job-name "dead" :silent-ms 5000 :stops stops})})
+
+      (with-redefs [job/start-job
+                    (fn [config]
+                      ;; what crank.job/run-loop does first thing, through
+                      ;; send-report — into the entry still holding the old job
+                      (swap! running update "dead" crank/add-report
+                        {:type :start :time (System/currentTimeMillis)})
+                      (restarted-job config stops))]
+        (crank/check-jobs! running))
+
+      (is (= ["dead"] @stops)
+        "the fresh worker is not stopped")
+      (is (= "fake-restarted" (.getName ^Thread (:worker (get @running "dead"))))
+        "and is the one the monitor tracks"))))
 
 
 (deftest vanished-job-does-not-leave-a-worker-behind
@@ -108,6 +130,20 @@
         "the worker we started for a job that no longer exists is stopped")
       (is (empty? @running)
         "and the stopped job is not resurrected"))))
+
+
+(deftest failed-restart-is-retried
+  (testing "a consumer that cannot be built does not kill the monitor"
+    (let [stops   (atom [])
+          running (atom nil)
+          dead    (fake-job {:job-name "dead" :silent-ms 5000 :stops stops})]
+      (reset! running {"dead" dead})
+
+      (with-redefs [job/start-job (fn [_] (throw (KafkaException. "no resolvable bootstrap urls")))]
+        (crank/check-jobs! running))
+
+      (is (identical? dead (get @running "dead"))
+        "the entry stays as it was, so the next pass retries the restart"))))
 
 
 (deftest live-jobs-are-left-alone
