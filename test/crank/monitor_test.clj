@@ -53,6 +53,13 @@
                                               :attempts  3
                                               :stops     stops})))))
 
+    (testing "a poll is no progress: it comes before func, so a job dying on its first message has one"
+      (is (nil? (crank/job-timeout
+                  (-> (fake-job {:job-name "j" :attempts 3 :stops stops})
+                      (crank/add-report {:type :poll :count 1 :time (System/currentTimeMillis)})
+                      (crank/add-report {:type :exception
+                                         :time (- (System/currentTimeMillis) 5000)}))))))
+
     (testing "a worker that has processed anything is back to the plain timeout"
       (is (crank/job-timeout
             (-> (fake-job {:job-name "j" :silent-ms 5000 :attempts 3 :stops stops})
@@ -188,3 +195,20 @@
 
       (is (zero? @starts))
       (is (empty? @stops)))))
+
+
+(deftest stop-stops-the-master-first
+  (testing "Monitor.stop stops the master before the jobs, so it cannot restart one being stopped"
+    (let [monitor      (crank/init {:name "test"})
+          master-alive (atom nil)]
+      (with-redefs [job/start-job (fn [config]
+                                    {:config config
+                                     :worker (fake-worker "fake-j")
+                                     :report []
+                                     :stop!  #(reset! master-alive
+                                                (.isAlive ^Thread @(:master monitor)))})]
+        (crank/start monitor "j" {})
+        (crank/stop monitor))
+
+      (is (false? @master-alive)
+        "the master is dead by the time the job is asked to stop"))))
