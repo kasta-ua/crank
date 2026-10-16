@@ -10,6 +10,9 @@
   instead of being left running.
 * A job whose consumer cannot be built (`KafkaException`) no longer kills the
   master thread; the restart is retried on the next pass.
+* The restart backoff works: the timeout doubles with every restart in a row
+  (up to 10 minutes) and starts over once a worker processes anything. It never
+  did — the count was read from the latest report, and only `:start` has it.
 * Tests run on an embedded KRaft broker (`KafkaClusterTestKit`) — Kafka 4
   removed ZooKeeper, so the previous fixture could not start a broker at all.
 

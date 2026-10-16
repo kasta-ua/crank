@@ -18,7 +18,8 @@
 
 (defn add-report [job report]
   (when job
-    (update job :report cons-limit 10 report)))
+    (cond-> (update job :report cons-limit 10 report)
+      (#{:message :batch} (:type report)) (assoc :progressed? true))))
 
 
 (defn check-timeout [attempts issue-time timeout]
@@ -29,18 +30,29 @@
       diff)))
 
 
+(defn- attempts
+  "Restarts in a row that brought no progress — what the backoff doubles the
+  timeout by. Kept in the config rather than read from the reports: only :start
+  carries it, and a dead worker's latest report is its :exception. A worker
+  that has processed anything was healthy, so its failure starts over."
+  [{:keys [config progressed?]}]
+  (if progressed?
+    0
+    (:attempts config 0)))
+
+
 (defn job-timeout
   "How long the job has been silent, if it is over its timeout; nil when alive.
   Pure, so it is safe to call from anywhere."
-  [{:keys [report config]}]
-  (when-let [{:keys [attempts time] :or {attempts 0}} (first report)]
-    (check-timeout attempts time (:timeout config 10000))))
+  [{:keys [report config] :as job}]
+  (when-let [{:keys [time]} (first report)]
+    (check-timeout (attempts job) time (:timeout config 10000))))
 
 
 (defn- restart-job!
   "Stops a dead job and starts a fresh one. Side-effecting: spawns a consumer
   thread, so it must never run inside swap!."
-  [job-name {:keys [stop! report config worker]} diff]
+  [job-name {:keys [stop! report config worker] :as job} diff]
   (log/infof "job %s [%s] seems to be dead since %s ms ago: %s\n%s"
     job-name
     (.getName worker)
@@ -48,7 +60,7 @@
     (pr-str report)
     (str/join "\n" (.getStackTrace worker)))
   (stop!)
-  (job/start-job (assoc config :attempts (inc (:attempts (first report) 0)))))
+  (job/start-job (assoc config :attempts (inc (attempts job)))))
 
 
 (defn- install-job!

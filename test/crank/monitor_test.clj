@@ -14,11 +14,12 @@
 
 (defn- fake-job
   "A job entry shaped the way crank.job/start-job builds one, after its worker
-  died. silent-ms is how long ago it last reported. Like the real :exception
-  report, this one has no :attempts — only :start carries it."
-  [{:keys [job-name silent-ms stops]
-    :or   {silent-ms 0}}]
-  {:config {:job-name job-name :timeout 1000}
+  died. silent-ms is how long ago it last reported, attempts how many restarts
+  in a row it has been through. Like the real :exception report, this one has
+  no :attempts — only :start carries it."
+  [{:keys [job-name silent-ms attempts stops]
+    :or   {silent-ms 0 attempts 0}}]
+  {:config {:job-name job-name :timeout 1000 :attempts attempts}
    :worker (fake-worker (str "fake-" job-name))
    :report [{:type     :exception
              :job-name job-name
@@ -45,13 +46,38 @@
                                                  :silent-ms 5000
                                                  :stops     stops})))))
 
-    (testing "the timeout doubles with every attempt of the latest :start"
+    (testing "the timeout doubles with every restart in a row"
       ;; 1000 * 2^3 = 8000, so 5 seconds of silence is still within budget
-      (is (nil? (crank/job-timeout
-                  (assoc (fake-job {:job-name "j" :stops stops})
-                    :report [{:type     :start
-                              :attempts 3
-                              :time     (- (System/currentTimeMillis) 5000)}])))))))
+      (is (nil? (crank/job-timeout (fake-job {:job-name  "j"
+                                              :silent-ms 5000
+                                              :attempts  3
+                                              :stops     stops})))))
+
+    (testing "a worker that has processed anything is back to the plain timeout"
+      (is (crank/job-timeout
+            (-> (fake-job {:job-name "j" :silent-ms 5000 :attempts 3 :stops stops})
+                (crank/add-report {:type :message :time (System/currentTimeMillis)})
+                ;; idle polls push the :message out of the reports; progress stays
+                (as-> job (reduce crank/add-report job
+                            (repeat 10 {:type :poll :count 0 :time (System/currentTimeMillis)})))
+                (crank/add-report {:type :exception
+                                   :time (- (System/currentTimeMillis) 5000)})))))))
+
+
+(deftest restart-counts-attempts
+  (letfn [(restart [job]
+            (let [running (atom {"j" job})]
+              (with-redefs [job/start-job (fn [config] (restarted-job config (atom [])))]
+                (crank/check-jobs! running))
+              (:attempts (:config (get @running "j")))))]
+    (let [stops (atom [])]
+      (testing "a restart without progress counts up"
+        (is (= 3 (restart (fake-job {:job-name "j" :silent-ms 10000 :attempts 2 :stops stops})))))
+
+      (testing "a restart after progress starts over"
+        (is (= 1 (restart (-> (fake-job {:job-name "j" :attempts 2 :stops stops})
+                              (crank/add-report {:type :message :time 0})
+                              (crank/add-report {:type :exception :time 0})))))))))
 
 
 (deftest restart-happens-exactly-once
