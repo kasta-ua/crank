@@ -1,7 +1,8 @@
 (ns crank.core
   (:require [clojure.tools.logging :as log]
             [crank.job :as job]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [org.apache.kafka.common KafkaException]))
 
 
 (defprotocol IMonitor
@@ -17,7 +18,8 @@
 
 (defn add-report [job report]
   (when job
-    (update job :report cons-limit 10 report)))
+    (cond-> (update job :report cons-limit 10 report)
+      (#{:message :batch} (:type report)) (assoc :progressed? true))))
 
 
 (defn check-timeout [attempts issue-time timeout]
@@ -28,30 +30,89 @@
       diff)))
 
 
-(defn check-job [{:keys [stop! report config worker] :as job}]
-  (if-let [issue (first report)]
-    (let [{:keys [attempts time] :or {attempts 0}} issue
+(defn- attempts
+  "Restarts in a row that brought no progress — what the backoff doubles the
+  timeout by. Kept in the config rather than read from the reports: only :start
+  carries it, and a dead worker's latest report is its :exception. A worker
+  that has processed anything was healthy, so its failure starts over."
+  [{:keys [config progressed?]}]
+  (if progressed?
+    0
+    (:attempts config 0)))
 
-          diff (check-timeout attempts time (:timeout config 10000))]
 
-      (if diff
-        (do
-          (log/infof "job %s [%s] seems to be dead since %s ms ago: %s\n%s"
-            (:job-name config)
-            (.getName worker)
-            diff
-            (pr-str report)
-            (str/join "\n" (.getStackTrace worker)))
-          (stop!)
-          (job/start-job (assoc config :attempts (inc attempts))))
-        job))
-    job))
+(defn job-timeout
+  "How long the job has been silent, if it is over its timeout; nil when alive.
+  Pure, so it is safe to call from anywhere."
+  [{:keys [report config] :as job}]
+  (when-let [{:keys [time]} (first report)]
+    (check-timeout (attempts job) time (:timeout config 10000))))
+
+
+(defn- restart-job!
+  "Stops a dead job and starts a fresh one. Side-effecting: spawns a consumer
+  thread, so it must never run inside swap!."
+  [job-name {:keys [stop! report config worker] :as job} diff]
+  (log/infof "job %s [%s] seems to be dead since %s ms ago: %s\n%s"
+    job-name
+    (.getName worker)
+    diff
+    (pr-str report)
+    (str/join "\n" (.getStackTrace worker)))
+  (stop!)
+  (job/start-job (assoc config :attempts (inc (attempts job)))))
+
+
+(defn- install-job!
+  "Puts the restarted job in place of the old one. The function handed to
+  swap-vals! is pure, so a lost CAS costs nothing but a retry. Returns false
+  when the entry was stopped or replaced meanwhile — the worker we have just
+  started is then unwanted.
+
+  Compares workers, not whole entries: the entry keeps changing while the
+  restart is under way — the fresh worker reports :start into it at once, a
+  slow old one may still report — and only a different worker (or none at all)
+  means the job was stopped or replaced."
+  [running job-name old new]
+  (let [same?      #(identical? (:worker (get % job-name)) (:worker old))
+        [before _] (swap-vals! running
+                     (fn [jobs]
+                       (if (same? jobs)
+                         (assoc jobs job-name new)
+                         jobs)))]
+    (same? before)))
+
+
+(defn check-jobs!
+  "One monitor pass: restarts the jobs that stopped reporting.
+
+  Restarting happens outside of swap! on purpose. swap! reruns its function on
+  a lost CAS and does not undo side effects, while *running is swapped by
+  send-report on every single message of every job — so contention is constant,
+  not exceptional. Deciding and restarting in one swap! (as check-job used to)
+  left orphaned consumers behind on every retry: alive, in the group, but
+  missing from *running and therefore invisible to the monitor and unreachable
+  by stop!."
+  [running]
+  (doseq [[job-name job] @running
+          :let  [diff (job-timeout job)]
+          :when diff]
+    ;; A consumer that cannot be built (e.g. bootstrap servers not resolving)
+    ;; must not take the master thread down with it: every job of the monitor
+    ;; would stop being restarted. The old entry stays, so the next pass retries.
+    (try
+      (let [new-job (restart-job! job-name job diff)]
+        (when-not (install-job! running job-name job new-job)
+          (log/infof "job %s is gone, stopping the worker we just started" job-name)
+          ((:stop! new-job))))
+      (catch KafkaException e
+        (log/errorf e "job %s could not be restarted, retrying on the next pass" job-name)))))
 
 
 (defn run-master [running]
   (try
     (loop []
-      (swap! running update-vals check-job)
+      (check-jobs! running)
       (Thread/sleep 1000)
       (recur))
 
@@ -84,20 +145,24 @@
                                        :send-report send-report))]
       (swap! *running assoc job-name job)))
 
+  ;; master first: otherwise it may restart a job we are stopping. install-job!
+  ;; would stop that worker again, but only after a needless rebalance.
   (stop [this]
+    (when-let [^Thread m @master]
+      (.interrupt m)
+      (.join m 5000))
     (doseq [job-name (keys @*running)]
-      (stop this job-name))
-    (when (and @master (.isAlive @master))
-      (.interrupt @master)))
+      (stop this job-name)))
 
+  ;; dissoc first, stop! after: same reason as check-jobs! — a function handed
+  ;; to swap! must be pure. Of two racing stops only one sees the entry in
+  ;; `before`; restart-job! may still call the same stop! from the master,
+  ;; which is harmless — stop! can be called any number of times.
   (stop [this job-name]
-    (swap! *running
-      (fn [jobs]
-        (let [{:keys [stop!]} (get jobs job-name)]
-          (when stop!
-            (log/infof "asking job %s to stop" job-name)
-            (stop!)))
-        (dissoc jobs job-name)))))
+    (let [[before _] (swap-vals! *running dissoc job-name)]
+      (when-let [{:keys [stop!]} (get before job-name)]
+        (log/infof "asking job %s to stop" job-name)
+        (stop!)))))
 
 
 (defn init

@@ -1,13 +1,13 @@
 .PHONY: test
 
 test:
-	clojure -C:test -R:test -m crank.test
+	clojure -M:test -m crank.test
 
 test-repl:
-	clj -C:test -R:test
+	clj -M:test
 
 nrepl:
-	clj -A:test:repl
+	clj -M:test:repl
 
 deploy:
 	lein deploy clojars

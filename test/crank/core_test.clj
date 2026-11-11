@@ -13,28 +13,23 @@
 
 (defn start [topic config]
   (let [last-report (atom nil)
-        start-time  (System/currentTimeMillis)
         mon         (crank/init {:name   (get-name)
                                  :report (fn [x]
                                            (reset! last-report x))})]
+    (ck/create-topic! topic)
     (crank/start mon topic (merge
                              {:topics [topic]
-                              :kafka  {:uri   "127.0.0.1:9092"
-                                       :group "q"}}
+                              ;; earliest, not the "latest" default: otherwise
+                              ;; whether the test sees its own message depends
+                              ;; on the consumer joining the group before the
+                              ;; producer sends. Own group per topic so the
+                              ;; tests cannot resume each other's offsets.
+                              :kafka  {:uri                (ck/kafka-address)
+                                       :group              (str "q-" topic)
+                                       :auto.offset.reset  "earliest"}}
                              config))
     [mon
-     (future
-       (loop []
-         (cond
-           (< 10000 (- (System/currentTimeMillis) start-time))
-           (throw (ex-info "waited for 10 seconds, I have no patience!" {}))
-
-           (= (:type @last-report) :poll)
-           :started
-
-           :else
-           (do (Thread/sleep 100)
-               (recur)))))]))
+     (future (ck/wait-for #(= (:type @last-report) :poll) 10000))]))
 
 
 (deftest simple-job
@@ -42,8 +37,8 @@
     (let [mon (crank/init {:name (get-name)})]
       (crank/start mon "simple" {:topics ["simple"]
                                  :func   identity
-                                 :kafka  {:uri   "127.0.0.1:9092"
-                                          :group "q"}})
+                                 :kafka  {:uri   (ck/kafka-address)
+                                          :group "q-simple"}})
       (crank/stop mon)))
 
   (testing "starting a job and processing a message works"
@@ -55,7 +50,7 @@
       @has-started
 
       @(ck/send! topic "just a value")
-      (Thread/sleep 100)
+      (ck/wait-for #(= 1 (count @messages)))
       (crank/stop mon "simple2")
 
       (is (= 1 (count @messages)))
@@ -75,7 +70,7 @@
       @(ck/send! topic "2")
       @(ck/send! topic "3")
       @(ck/send! topic "4")
-      (Thread/sleep 100)
+      (ck/wait-for #(= 4 (count (apply concat @batches))))
       (crank/stop mon topic)
 
       (is (every? vector? @batches))
@@ -83,9 +78,10 @@
 
   (testing "what if an exception happened"
     (let [topic "exc"
-          ;; This creates topic and allows to set predictable offset
+          _     (ck/create-topic! topic)
+          ;; a message to skip past, so the offset below is predictable
           _     @(ck/send! topic "create topic!")
-          _     (kafka/set-offset! {:uri "127.0.0.1:9092" :group "q"} topic 1)
+          _     (kafka/set-offset! {:uri (ck/kafka-address) :group (str "q-" topic)} topic 1)
 
           oops-i-did-that   (atom false)
           messages          (atom [])
@@ -100,7 +96,9 @@
                                    (swap! messages conj message)))})]
       @has-started
       @(ck/send! topic "I played with your heart")
-      (Thread/sleep 10000)
+      ;; the first delivery throws, the job dies, the monitor restarts it after
+      ;; :timeout and the redelivery goes through
+      (ck/wait-for #(= 1 (count @messages)) 30000)
       (crank/stop mon)
 
       (is (= 1 (count @messages)))
@@ -117,4 +115,4 @@
 (test/use-fixtures :once
   report-threads
   (fn [f] (f) (shutdown-agents))
-  ck/cleanup-temp ck/start-zookeeper ck/start-kafka)
+  ck/start-kafka)

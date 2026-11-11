@@ -1,3 +1,21 @@
+## 2.0.1
+
+* Fixed the monitor spawning orphaned consumers: `check-job` ran `stop!` and
+  `start-job` inside `swap!`, and a lost CAS reran them without undoing the
+  threads already started. Split into pure `job-timeout` and effectful
+  `check-jobs!`; `check-job` is gone.
+* `Monitor.stop` no longer calls `stop!` from inside `swap!` either, and stops
+  the master before the jobs, so it cannot restart a job being stopped.
+* A worker started for a job that was stopped mid-restart is now stopped
+  instead of being left running.
+* A job whose consumer cannot be built (`KafkaException`) no longer kills the
+  master thread; the restart is retried on the next pass.
+* The restart backoff works: the timeout doubles with every restart in a row
+  (up to 10 minutes) and starts over once a worker processes anything. It never
+  did — the count was read from the latest report, and only `:start` has it.
+* Tests run on an embedded KRaft broker (`KafkaClusterTestKit`) — Kafka 4
+  removed ZooKeeper, so the previous fixture could not start a broker at all.
+
 ## 2.0.0
 
 ### Breaking Changes
